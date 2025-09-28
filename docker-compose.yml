@@ -1,0 +1,223 @@
+services:
+  # person-postgres
+  person-postgres:
+    image: postgres:17
+    container_name: person-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=person
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./infrastructure/databases/person:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready", "-U", "postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # keycloak-postgres
+  keycloak-postgres:
+    image: postgres:17
+    container_name: keycloak-postgres
+    environment:
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=keycloak
+      - POSTGRES_DB=keycloak
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready", "-U", "keycloak" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # Для предоставления метрик в Prometheus по БД person-postgres
+  person-postgres-eхporter:
+    image: prometheus-community/postgres-exporter:latest
+    container_name: person-postgres-eхporter
+    # Условие, что сервис person-postgres здоровый
+    depends_on:
+      person-postgres:
+        condition:
+          service_healthy
+    environment:
+      DATA_SOURCE_URL: "postgresql://postgres:postgres@person-postgres:5432/postgres?sslmode=disable"
+    ports:
+      - "9188:9187"
+
+  keycloak-postgres-exporter:
+    image: prometheus-community/postgres-exporter:latest
+    container_name: keycloak-postgres-eхporter
+    # Условие, что сервис person-postgres здоровый
+    depends_on:
+      person-postgres:
+        condition:
+          service_healthy
+    environment:
+      DATA_SOURCE_URL: "postgresql://keycloak:keycloak@keycloak-postgres:5432/keycloak?sslmode=disable"
+    ports:
+      - "9189:9187"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: keycloak
+    command:
+      - start-dev
+      - import-realm
+      - --health-enabled=true
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    environment:
+      JAVA_OPTS: -Dkeycloak.migration.userExportStrategy=REALM_FILE
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC-DB-URL: postgresql://keycloak-postgres:5432/keycloak
+      KC-DB-USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+    volumes:
+      - ./infrastructure/keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json
+    depends_on:
+      keycloak-postgres:
+        condition:
+          service_healthy
+    healthcheck:
+      # curl -fsS: f - fail, s - silent, S - show error
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Хранение артефактов
+  nexus:
+    image: sonatype/nexus3:3.76.0
+    container_name: nexus
+    ports:
+      - "8081:8081"
+    environment:
+      NEXUS_SECURITY_INITIAL_PASSWORD: admin
+      NEXUS_SECURITY_RANDOM_PASSWORD: false
+    volumes:
+      - nexus-data:/nexus-data
+    healthcheck:
+      test: ["CMD", "curl -f http://localhost:8081/service/rest/v1/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Хранение метрик
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    healthcheck:
+      # wget --spider: spider - проверка доступности
+      test: ["CMD", "wget", "--spider" "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Контейнер для хранения логов, в который будут отправляться данные из агента Grafana Alloy
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infrastructure/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+    healthcheck:
+      # -q quiet
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Контейнер для хранения трейсов, в который будут отправляться данные из агента Grafana Alloy
+  tempo:
+    image: grafana/tempo:2.41
+    container_name: tempo
+    volumes:
+      - ./infrastructure/tempo/tempo.yaml:/etc/tempo/tempo.yaml
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+
+  # Агент Grafana Alloy
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    user: root
+    ports:
+      - "9080:9080" # HTTP UI
+      - "4317:4317" # OTLP (OpenTelemetry protocol) gRPC
+      - "4318:4318" # OTLP (OpenTelemetry protocol) http
+    volumes:
+      - ./infrastructure/alloy/config.alloy:/etc/alloy:config.alloy
+      # Доступ к диретории Docker для discovery и получения данных по контейнерам
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      GRAFANA_LOKI_URL: http://loki:3100/loki/api/v1/push
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:9080
+      - --storage.path=/var/lib/alloy/data
+      - etc/alloy/config.alloy
+
+  # UI для метрик/логов/трейсов
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      alloy:
+        condition: service_started
+      tempo:
+        condition: service_started
+    environment:
+      # Получение некоторых данных без авторизации
+      GF_AUTH_ANONYMOUS_ENABLED: true
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_METRICS_ENABLED: "true"
+    volumes:
+      # В указанных директориях мы будем хранить
+      # JSON файлы с описанием источников данных и дашбордов для импорта в Grafana.
+      # Это позволяет нам не настраивать их вручную сразу после старта.
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards
+      - nexus-data:/nexus-data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  # persons-api
+
+  # persons
+
+  # api
+
+volumes:
+  artifacts:
+  tempo-data:
+  nexus-data:
+  loki_index:
+  loki_chunks:
+  loki_data:
+  loki-rules:
+
+
