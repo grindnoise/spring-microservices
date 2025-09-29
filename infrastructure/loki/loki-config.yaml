@@ -65,4 +65,10 @@ table_manager:
     inactive_write_throughput: 0
     provisioned_read_throughput: 0
     provisioned_write_throughput: 0
-
+  index_tables_provisioning:
+    inactive_read_throughput: 0
+    inactive_write_throughput: 0
+    provisioned_read_throughput: 0
+    provisioned_write_throughput: 0
+  retention_deletes_enabled: true
+  retention period: 672h

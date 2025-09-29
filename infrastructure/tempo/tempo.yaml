@@ -1,0 +1,35 @@
+# НТТР-сервер
+# "server.http_listen_port: 3200" - служебный НТТР (здоровье/метрики "/metrics", статусы).
+server:
+  http_listen_port: 3200
+
+# Приём OTLP
+# "distributor.receivers.otlp.protocols.grpc/http" - принимает трейсы по OTLP:
+# gRPC 4317, НТТР 4318 (стандартные порты по умолчанию).
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+        http:
+
+# Ingester
+# "trace_idle_period: 10s" - если трейс не дополняется 10 с,
+# буфер закрывается и пишется на диск (ускоряет видимость трейсов и снижает память).
+ingester:
+  trace_idle_period: 10s
+
+# Compactor
+# "compacted_block_retention: 48h" - хранить компактированные блоки 48 часов (управление объёмом и скоростью чтения).
+compactor:
+  compaction:
+    compacted_block_retention: 48h
+
+# Хранилище трейсов
+# "storage.trace.backend: local" - локальное файловое хранилище.
+# "local.path: /var/tempo/traces" - каталог для сегментов/блоков трейсов.
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
