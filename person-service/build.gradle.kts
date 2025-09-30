@@ -1,3 +1,6 @@
+
+
+
 plugins {
 	java
 	id("org.springframework.boot") version "3.5.6"
@@ -5,12 +8,12 @@ plugins {
 }
 
 group = "com.evilcorp"
-version = "0.0.1-SNAPSHOT"
-description = "Microservice demo project"
+version = "1.0.0-SNAPSHOT"
+description = "Person domain service for microservices demo project"
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(25)
+		languageVersion = JavaLanguageVersion.of(24)
 	}
 }
 
