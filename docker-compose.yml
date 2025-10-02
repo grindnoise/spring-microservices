@@ -61,7 +61,7 @@ services:
     container_name: individuals-keycloak
     command: start-dev --import-realm --metrics-enabled=true
     ports:
-      - "8080:8080"
+      - "8181:8080"
       - "9000:9000"
     environment:
       JAVA_OPTS: -Dkeycloak.migration.usersExportStrategy=REALM_FILE

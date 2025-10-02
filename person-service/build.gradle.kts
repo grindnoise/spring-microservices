@@ -1,4 +1,4 @@
-import org.gradle.api.internal.lambdas.SerializableLambdas.spec
+// Для генерации артефактов
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
 val versions = mapOf(
@@ -18,10 +18,12 @@ val versions = mapOf(
 )
 
 plugins {
+    // Сугубо для IntelliJ, глушит warnings
     idea
     java
     id("org.springframework.boot") version "3.5.6"
     id("io.spring.dependency-management") version "1.1.7"
+    // Для публикации в Nexus
     id("maven-publish")
     id("org.openapi.generator") version "7.13.0"
 }
@@ -97,8 +99,6 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:${versions["testContainers"]}")
     testImplementation("org.testcontainers:testcontainers:${versions["testContainers"]}")
     testImplementation("org.testcontainers:junit-jupiter:${versions["testContainers"]}")
-
-
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -222,3 +222,111 @@ tasks.named("compileJava") {
 // Создаётся отдельный 'SourceSet' -> собственная компиляция ('compile<Spec>Java *).
 // Создаётся отдельная 'Jar' задача -> артефакт <spec>.jar в 'build/libs
 // Задумка: собрать отдельные JAR'ы сгенерированного клиента/моделей для каждой спецификации.
+
+tasks.named("build") {
+    dependsOn(generatedJars)
+}
+
+val generatedJars = foundSpecifications.map { spec ->
+    val name = spec.nameWithoutExtension
+    val generateTaskName = buildGenerateApiTaskName(name)
+    val jarTaskName = buildJarTaskName(generateTaskName)
+    val outDirProvider = getAbsolutePath(name)
+    val generateSrcDir = outDirProvider.map { File(it).resolve("src/main/java") }
+    val sourceSetName = name
+    val sourceSet = sourceSets.create(sourceSetName) {
+        java.srcDir(generateSrcDir)
+        compileClasspath += sourceSets.getByName("main").compileClasspath
+    }
+
+    val compileTaskName = "compile${name.replaceFirstChar(Char::uppercaseChar)}Java"
+    tasks.register<JavaCompile>(compileTaskName) {
+        source = sourceSet.java
+        classpath = sourceSet.compileClasspath
+        destinationDirectory.set(layout.buildDirectory.dir("classes/${sourceSetName}"))
+        dependsOn(generateTaskName)
+    }
+
+    tasks.register<Jar>(jarTaskName) {
+        group = "build"
+        archiveBaseName.set(name)
+        destinationDirectory.set(layout.buildDirectory.dir("libs"))
+
+        val classOutput = layout.buildDirectory.dir("classes/$sourceSetName")
+        from(classOutput)
+        dependsOn(compileTaskName)
+        doFirst {
+            logger.lifecycle("Building JAR for $name from ${classOutput.get().asFile}")
+        }
+    }
+}
+
+/*
+──────────────────────────────────────────────────────
+============= Resolve NEXUS credentials ==============
+──────────────────────────────────────────────────────
+*/
+
+// Чтение переменных для NEXUS из .env файла
+file(".env").takeIf { it.exists() }?.readLines()?.forEach {
+    val (k, v) = it.split('=')
+    System.setProperty(k.trim(), v.trim())
+    logger.lifecycle("${k.trim()}=${v.trim()}")
+}
+
+val nexusUrl = System.getenv("NEXUS_URL") ?: System.getProperty("NEXUS_URL")
+val nexusUser = System.getenv("NEXUS_USER") ?: System.getProperty("NEXUS_USER")
+val nexusPassword = System.getenv("NEXUS_PASSWORD") ?: System.getProperty("NEXUS_PASSWORD")
+
+if (nexusUrl.isNullOrBlank() || nexusUser.isNullOrBlank() || nexusPassword.isNullOrBlank()) {
+    throw GradleException("NEXUS details not found in .env file, consider this file be created with correct credentials.")
+}
+
+/*
+──────────────────────────────────────────────────────
+================= NEXUS publishing ===================
+──────────────────────────────────────────────────────
+*/
+
+// Публикация в Nexus
+// Для каждой спецификации пытается найти уже собранный JAR в 'build/libs' и создать MavenPublication(groupId=net.proselyte, 'artifactId=<spec> *version=1.0.0-SNAPSHOT*).
+// Репозиторий - 'nexus', с basic-auth.
+publishing {
+    publications {
+        foundSpecifications.forEach { spec ->
+            val name = spec.nameWithoutExtension
+            val jarBaseName = name
+
+            val jarFile = file("build/libs")
+                .listFiles()?.firstOrNull { it.name.contains(name) && (it.extension == "zip" || it.extension == "jar") }
+
+            if (jarFile != null) {
+                logger.lifecycle("Publishing $name to ${jarFile.name}")
+
+                create<MavenPublication>("publish${name.replaceFirstChar(Char::uppercaseChar)}Jar") {
+                    artifact(jarFile)
+                    groupId = "com.evilcorp"
+                    artifactId = jarBaseName
+                    version = project.version.toString()
+
+                    pom {
+                        this.name.set("Generated API $jarBaseName")
+                        this.description.set("OpenAPI generated conde for $jarBaseName")
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "nexus"
+            url = uri(nexusUrl)
+            isAllowInsecureProtocol = true
+            credentials {
+                username = nexusUser
+                password = nexusPassword
+            }
+        }
+    }
+}
