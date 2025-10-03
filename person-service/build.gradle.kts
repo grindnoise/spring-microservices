@@ -63,7 +63,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-validation")
-    implementation("org.springframework.boot:spring-boot-starter-security")
+//    implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.cloud:spring-cloud-starter-openfeign:${versions["springCloudOpenfeignStarter"]}")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${versions["springDocOpenApiStarterWebMvcUi"]}")
 
@@ -275,11 +275,14 @@ file(".env").takeIf { it.exists() }?.readLines()?.forEach {
 }
 
 val nexusUrl = System.getenv("NEXUS_URL") ?: System.getProperty("NEXUS_URL")
-val nexusUser = System.getenv("NEXUS_USER") ?: System.getProperty("NEXUS_USER")
+val nexusUser = System.getenv("NEXUS_USERNAME") ?: System.getProperty("NEXUS_USERNAME")
 val nexusPassword = System.getenv("NEXUS_PASSWORD") ?: System.getProperty("NEXUS_PASSWORD")
 
 if (nexusUrl.isNullOrBlank() || nexusUser.isNullOrBlank() || nexusPassword.isNullOrBlank()) {
-    throw GradleException("NEXUS details not found in .env file, consider this file be created with correct credentials.")
+    throw GradleException(
+        "NEXUS details are not set. Create a .env file with correct properties: " +
+                "NEXUS_URL, NEXUS_USERNAME, NEXUS_PASSWORD"
+    )
 }
 
 /*
@@ -289,7 +292,7 @@ if (nexusUrl.isNullOrBlank() || nexusUser.isNullOrBlank() || nexusPassword.isNul
 */
 
 // Публикация в Nexus
-// Для каждой спецификации пытается найти уже собранный JAR в 'build/libs' и создать MavenPublication(groupId=net.proselyte, 'artifactId=<spec> *version=1.0.0-SNAPSHOT*).
+// Для каждой спецификации пытается найти уже собранный JAR в 'build/libs' и создать MavenPublication(groupId=com.evilcorp, 'artifactId=<spec> *version=1.0.0-SNAPSHOT*).
 // Репозиторий - 'nexus', с basic-auth.
 publishing {
     publications {

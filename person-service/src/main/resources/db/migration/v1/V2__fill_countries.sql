@@ -1,3 +1,4 @@
+-- DML script
 INSERT
 INTO person.countries (name, code)
 VALUES ('Afghanistan', 'AFG'),

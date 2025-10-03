@@ -204,7 +204,23 @@ services:
       retries: 10
 
   # Зарезервировано для будущих сервисов
-  # persons-api
+  persons-api:
+    build:
+      context: ./person-service
+      dockerfile: Dockerfile
+    container_name: persons-api
+    ports:
+      - "8092:8092"
+    working_dir: /app
+    environment:
+      POSTGRES_HOST: person-postgres
+      POSTGRES_PORT: 5432
+      OTLP_EXPORTER_ENDPOINT: http://tempo:4318
+    healthcheck:
+      test: ["CMD", "curl -i http://localhost:8092/actuator/health || exit 1"]  # Проверка статуса API
+      interval: 10s
+      timeout: 5s
+      retries: 30
   # persons
   # api
 
