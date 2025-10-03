@@ -42,7 +42,8 @@ spring:
         show_sql: ${HIBERNATE_SHOW_SQL:true}
         format_sql: ${HIBERNATE_FORMAT_SQL:true}
         highlight_sq: ${HIBERNATE_HIGHLIGHT_SQL:true}
-        session.events. log.LOG_QUERIES_SLOWER_THAN_MS: ${SLOW_SQL_QUERY_INDICATOR_MS:1500}
+        # Print slow queries
+        session.events.log.LOG_QUERIES_SLOWER_THAN_MS: ${SLOW_SQL_QUERY_INDICATOR_MS:1500}
         # It translates your Hibernate mappings (annotations or XML) into corresponding SQL statements to create, update, or validate your database schema.
         hbm2ddl:
           auto: validate
@@ -62,3 +63,21 @@ management:
         enabled: true
   tracing:
     enabled: true
+    sampling:
+      probability: 1.0
+
+otel:
+  exporter:
+    otlp:
+      # Grafana Alloy
+      endpoint: ${OTLP_EXPORTER_ENDPOINT:http://localhost:4318}
+      # Uses protobuf just for payload serialization
+      protocol: http/protobuf
+  logs:
+    exporter: none
+  metrics:
+    exporter: none
+
+logging:
+  # Use custom formatting XML-based config
+  config: "classpath:logback.xml"
