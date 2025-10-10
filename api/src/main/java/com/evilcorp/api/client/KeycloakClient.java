@@ -35,7 +35,7 @@ public class KeycloakClient {
 
     @PostConstruct
     public void init() {
-        this.userRegistrationUrl = properties.serverUrl() + "/admin/realms" + properties.realm() + "/users";
+        this.userRegistrationUrl = properties.serverUrl() + "/admin/realms/" + properties.realm() + "/users";
         this.userByIdUrl = userRegistrationUrl + "/{id}";
         this.userPasswordResetUrl = userByIdUrl + "/reset-password";
     }
@@ -64,10 +64,10 @@ public class KeycloakClient {
     }
 
     @WithSpan("keycloakClient.register")
-    public Mono<String> register(String adminToken, KeycloakUserRepresentation userRepresentation) {
+    public Mono<String> register(TokenResponse adminToken, KeycloakUserRepresentation userRepresentation) {
         return webClient.post()
                 .uri(userRegistrationUrl)
-                .header(HttpHeaders.AUTHORIZATION, BEARER + adminToken)
+                .header(HttpHeaders.AUTHORIZATION, BEARER + adminToken.getAccessToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(userRepresentation)
                 .exchangeToMono(this::extractUserId);

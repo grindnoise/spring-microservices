@@ -31,6 +31,7 @@ public class PersonService {
         return Mono.fromCallable(() -> personApiClient.registration(personMapper.from(request)))
                 .mapNotNull(HttpEntity::getBody)
                 .map(personMapper::from)
+                .onErrorComplete()
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnNext(t -> log.info("Successfully registered person with id [{}]", t.getId()));
     }
