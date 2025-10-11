@@ -230,7 +230,7 @@ services:
       dockerfile: Dockerfile
     container_name: api
     environment:
-      KEYCLOAK_URL: http://individuals-keycloak:8181
+      KEYCLOAK_URL: http://keycloak:8080
       SPRING_PROFILES_ACTIVE: docker
       PERSONS_API_HOST: persons-api
       PERSONS_API_URL: http://persons-api:8092
